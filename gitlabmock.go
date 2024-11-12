@@ -109,6 +109,16 @@ func (mock *GitlabMock) AddProjectMember(projectMember *gitlab.ProjectMember, pr
 	return project, nil
 }
 
+func (mock *GitlabMock) AddInheritedProjectMember(projectMember *gitlab.ProjectMember, project *gitlab.Project) (*gitlab.Project, error) {
+	if projectMember == nil || projectMember.ID <= 0 {
+		return nil, errors.New("invalid project member")
+	}
+
+	mock.projectMembersInherited[project.ID] = append(mock.projectMembersInherited[project.ID], projectMember)
+
+	return project, nil
+}
+
 func (mock *GitlabMock) GetProjectMembers(projectID int) ([]*gitlab.ProjectMember, error) {
 	projectMembers, projectExists := mock.projectMembers[projectID]
 	if !projectExists {
