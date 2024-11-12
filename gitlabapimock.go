@@ -34,8 +34,9 @@ func (mock *GitlabApiMock) CreateServer(addr string) *http.Server {
 	r.HandleFunc("/groups", mock.ListGroupsHandler).Methods(http.MethodGet)
 	r.HandleFunc("/projects", mock.ListProjectsHandler).Methods(http.MethodGet)
 	r.HandleFunc("/projects/{id}/members", mock.ListAllMembersOfAProjectsHandler).Methods(http.MethodGet)
+	r.HandleFunc("/projects/{id}/members/all", mock.ListAllMembersWithInheritedOfAProjectsHandler).Methods(http.MethodGet)
 	r.HandleFunc("/projects/{id}/members", mock.AddMemberToAProjectsHandler).Methods(http.MethodPost)
-	r.HandleFunc("/projects/{id}/members/{user_id}", mock.EdifMemberOfAProjectHandler).Methods(http.MethodPut)
+	r.HandleFunc("/projects/{id}/members/{user_id}", mock.EditMemberOfAProjectHandler).Methods(http.MethodPut)
 	r.HandleFunc("/projects/{id}/members/{user_id}", mock.DeleteMemberFromAProjectHandler).Methods(http.MethodDelete)
 
 	server := &http.Server{
@@ -137,6 +138,46 @@ func (mock *GitlabApiMock) ListAllMembersOfAProjectsHandler(responseWriter http.
 	return
 }
 
+// ListAllMembersWithInheritedOfAProjectsHandler implements https://docs.gitlab.com/ee/api/members.html#list-all-members-of-a-group-or-project-including-inherited-and-invited-members
+func (mock *GitlabApiMock) ListAllMembersWithInheritedOfAProjectsHandler(responseWriter http.ResponseWriter, request *http.Request) {
+	vars := mux.Vars(request)
+
+	id := vars["id"]
+	idInteger, _ := strconv.Atoi(id)
+
+	_, projectExists := mock.gitlabMock.projects[idInteger]
+	if !projectExists {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		responseWriter.Write([]byte(http.StatusText(http.StatusNotFound)))
+		return
+	}
+
+	projectMembers := mock.gitlabMock.projectMembers[idInteger]
+
+	// add inherited users
+	for _, projectMemberInherited := range mock.gitlabMock.projectMembersInherited[idInteger] {
+		projectMemberExists := false
+		for _, projectMember := range projectMembers {
+			if projectMember.ID == projectMemberInherited.ID {
+				projectMemberExists = true
+				break
+			}
+		}
+		if !projectMemberExists {
+			projectMembers = append(projectMembers, projectMemberInherited)
+		}
+	}
+
+	err := json.NewEncoder(responseWriter).Encode(projectMembers)
+	if err != nil {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+		responseWriter.Write([]byte(err.Error()))
+		return
+	}
+
+	return
+}
+
 // AddMemberToAProjectsHandler implements https://docs.gitlab.com/ee/api/members.html#add-a-member-to-a-group-or-project
 func (mock *GitlabApiMock) AddMemberToAProjectsHandler(responseWriter http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
@@ -191,8 +232,8 @@ func (mock *GitlabApiMock) AddMemberToAProjectsHandler(responseWriter http.Respo
 	return
 }
 
-// EdifMemberOfAProjectHandler implements https://docs.gitlab.com/ee/api/members.html#edit-a-member-of-a-group-or-project
-func (mock *GitlabApiMock) EdifMemberOfAProjectHandler(responseWriter http.ResponseWriter, request *http.Request) {
+// EditMemberOfAProjectHandler implements https://docs.gitlab.com/ee/api/members.html#edit-a-member-of-a-group-or-project
+func (mock *GitlabApiMock) EditMemberOfAProjectHandler(responseWriter http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 
 	id := vars["id"]
