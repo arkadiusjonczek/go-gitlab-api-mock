@@ -16,17 +16,19 @@ type GitlabMock struct {
 	projectIds       atomic.Int32
 	projectMemberIds atomic.Int32
 
-	users          []*gitlab.User
-	groups         []*gitlab.Group
-	projects       map[int]*gitlab.Project
-	projectMembers map[int][]*gitlab.ProjectMember
+	users                   []*gitlab.User
+	groups                  []*gitlab.Group
+	projects                map[int]*gitlab.Project
+	projectMembers          map[int][]*gitlab.ProjectMember
+	projectMembersInherited map[int][]*gitlab.ProjectMember
 }
 
 func NewGitlabMock() *GitlabMock {
 	return &GitlabMock{
-		groups:         make([]*gitlab.Group, 0),
-		projects:       make(map[int]*gitlab.Project),
-		projectMembers: make(map[int][]*gitlab.ProjectMember),
+		groups:                  make([]*gitlab.Group, 0),
+		projects:                make(map[int]*gitlab.Project),
+		projectMembers:          make(map[int][]*gitlab.ProjectMember),
+		projectMembersInherited: make(map[int][]*gitlab.ProjectMember),
 	}
 }
 
@@ -97,16 +99,56 @@ func (mock *GitlabMock) GetProjects() []*gitlab.Project {
 	return projects
 }
 
-func (mock *GitlabMock) AddProjectMember(projectMember *gitlab.ProjectMember, project *gitlab.Project) *gitlab.Project {
+func (mock *GitlabMock) AddProjectMember(projectMember *gitlab.ProjectMember, project *gitlab.Project) (*gitlab.Project, error) {
+	if projectMember == nil || projectMember.ID <= 0 {
+		return nil, errors.New("invalid project member")
+	}
+
 	mock.projectMembers[project.ID] = append(mock.projectMembers[project.ID], projectMember)
 
-	return project
+	return project, nil
+}
+
+func (mock *GitlabMock) AddInheritedProjectMember(projectMember *gitlab.ProjectMember, project *gitlab.Project) (*gitlab.Project, error) {
+	if projectMember == nil || projectMember.ID <= 0 {
+		return nil, errors.New("invalid project member")
+	}
+
+	mock.projectMembersInherited[project.ID] = append(mock.projectMembersInherited[project.ID], projectMember)
+
+	return project, nil
 }
 
 func (mock *GitlabMock) GetProjectMembers(projectID int) ([]*gitlab.ProjectMember, error) {
 	projectMembers, projectExists := mock.projectMembers[projectID]
 	if !projectExists {
 		fmt.Errorf("project %d not found", projectID)
+	}
+
+	return projectMembers, nil
+}
+
+func (mock *GitlabMock) GetProjectMembersWithInherited(projectID int) ([]*gitlab.ProjectMember, error) {
+	projectMembers, projectExists := mock.projectMembers[projectID]
+
+	projectMembersInherited, projectExistsInherited := mock.projectMembersInherited[projectID]
+
+	if !projectExists && !projectExistsInherited {
+		fmt.Errorf("project %d not found", projectID)
+	}
+
+	// add inherited users
+	for _, projectMemberInherited := range projectMembersInherited {
+		projectMemberExists := false
+		for _, projectMember := range projectMembers {
+			if projectMember.ID == projectMemberInherited.ID {
+				projectMemberExists = true
+				break
+			}
+		}
+		if !projectMemberExists {
+			projectMembers = append(projectMembers, projectMemberInherited)
+		}
 	}
 
 	return projectMembers, nil
